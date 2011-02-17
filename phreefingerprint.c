@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <getopt.h>
 #include <openssl/pem.h>
 #include <openssl/pkcs12.h>
 
@@ -40,18 +41,32 @@ int main(int argc, char **argv)
 	BIO *STDout, *bio_err;
 	X509 *x;
 	char *infile, *domain, *hash;
-	int informat = FORMAT_PEM, j;
+	int informat = FORMAT_PEM, j, c, tlsa = 0;
 	const EVP_MD *digest = EVP_sha1();
 	unsigned int n;
 	unsigned char md[EVP_MAX_MD_SIZE];
 
-	if (argc != 3) {
-		fprintf(stderr, "Usage: %s domain certfile\n", *argv);
+	while ((c = getopt(argc, argv, "t")) != EOF) {
+		switch (c) {
+			case 't':
+				tlsa = 1;
+				break;
+			default:
+				fprintf(stderr, "Usage: %s [-t] domain PEM\n", *argv);
+				exit(2);
+		}
+	}
+
+	argc -= optind;
+	argv += optind;
+
+	if (argc != 2) {
+		fprintf(stderr, "Usage: %s [-t] domain certfile\n", *argv);
 		exit(2);
 	}
 
-	domain = argv[1];
-	infile = argv[2];
+	domain = argv[0];
+	infile = argv[1];
   
 	STDout = BIO_new_fp(stdout,BIO_NOCLOSE);
 	bio_err = BIO_new_fp(stderr,BIO_NOCLOSE);
@@ -66,26 +81,66 @@ int main(int argc, char **argv)
 		exit(3);
 	}
 
-	/*
-	 * Print out a DNS TXT RR for Phreeload.
-	 * 	domain  IN TXT "v=key1 ha=sha1 h=5e0905b0eafd35d59f1b178727d4eaadd06c415d"
-	 */
-
-	BIO_printf(STDout,"%s IN TXT \"v=key1 ha=", domain);
 
 	hash = strtolower(OBJ_nid2sn(EVP_MD_type(digest)));
-	if (hash) {
-		BIO_printf(STDout,"%s ", hash);
-		free(hash);
+	if (tlsa == 0) {
+		/*
+		 * Print out a DNS TXT RR for Phreeload.
+		 * 	domain  IN TXT "v=key1 ha=sha1 h=5e0905b0eafd35d59f1b178727d4eaadd06c415d"
+		 */
+	
+		BIO_printf(STDout,"%s IN TXT \"v=key1 ha=", domain);
+	
+		if (hash) {
+			BIO_printf(STDout,"%s ", hash);
+			free(hash);
+		} else {
+			BIO_printf(STDout,"unknown ");
+		}
+	
+		BIO_printf(STDout, "h=");
+		for (j = 0; j < n; j++) {
+			BIO_printf(STDout, "%02x", md[j]);
+		}
+		BIO_printf(STDout, "\"\n");
 	} else {
-		BIO_printf(STDout,"unknown ");
-	}
 
-	BIO_printf(STDout, "h=");
-	for (j = 0; j < n; j++) {
-		BIO_printf(STDout, "%02x", md[j]);
+		/* Print as TLSA
+		 * (http://datatracker.ietf.org/doc/draft-ietf-dane-protocol/?include_text=1)
+		 */
+
+		int htype = 0;
+		int certtype = 1;		// Hash of end-entity cert
+		int len;
+
+		if (!strcmp(hash, "sha1")) {
+			htype = 1;
+		} else if (!strcmp(hash, "sha256")) {
+			htype = 2;
+		} else {
+			fprintf(stderr, "Can't (yet) handle hash type %s\n", hash);
+			exit(3);
+		}
+
+#ifdef DRAFTPASSED
+		
+		BIO_printf(STDout,"%s IN TLSA ( %d %d ", domain, certtype, htype);
+		for (j = 0; j < n; j++) {
+			BIO_printf(STDout, "%02x", md[j]);
+		}
+		BIO_printf(STDout," )\n");
+#else
+
+		len = n + 2; 	// length of hash + certype + hashtype
+
+		BIO_printf(STDout,"%s IN TYPE65534 \\# %d ( %02X%02X", domain, len, certtype, htype);
+		for (j = 0; j < n; j++) {
+			BIO_printf(STDout, "%02x", md[j]);
+		}
+		BIO_printf(STDout," )\n");
+#endif
+
 	}
-	BIO_printf(STDout, "\"\n");
 
 	return (0);
 }
