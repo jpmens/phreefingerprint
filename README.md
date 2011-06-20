@@ -1,6 +1,6 @@
 # phreefingerprint
 
-Create DNS TXT RR from PEM certificate for @dakami's Phreeload or for Extended DNSSEC Validator (see [my posting](http://blog.fupps.com/2011/02/16/ssl-certificate-validation-and-dnssec/) for what the latter does.
+Create DNS TXT RR from PEM certificate for @dakami's Phreeload or for Extended DNSSEC Validator. (See [my posting](http://jpmens.net/2011/02/16/ssl-certificate-validation-and-dnssec/) for what the latter does.)
 
 ## Usage
 	phreefingerprint [-t] domain certfile
